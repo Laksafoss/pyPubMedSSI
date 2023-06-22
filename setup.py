@@ -9,14 +9,14 @@ def read(fname):
 
 
 setup(
-    name="pymed",
+    name="pyPubMedSSI",
     version=__version__,
-    author="Gijs Wobben",
-    author_email="gijswobben@gmail.com",
-    description=("Python library for access to PubMed"),
+    author="Anna Laksafoss",
+    author_email="adls@ssi.dk",
+    description=("Python library for access to SSI publications on PubMed"),
     license="MIT",
     keywords="PubMed PMC",
-    url="https://github.com/gijswobben/pymed",
+    url="https://github.com/Laksafoss/pyPubMedSSI/",
     packages=find_packages(),
     install_requires=["requests>=2.20.0"],
     tests_require=["pytest"],
