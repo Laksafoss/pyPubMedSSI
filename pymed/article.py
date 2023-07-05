@@ -1,5 +1,6 @@
 import json
 import datetime
+import re
 
 from xml.etree.ElementTree import Element
 from typing import TypeVar
@@ -20,11 +21,13 @@ class PubMedArticle(object):
         "journal",
         "publication_date",
         "authors",
+        "ssi_affiliation",
         "methods",
         "conclusions",
         "results",
         "copyrights",
         "doi",
+        "bibtex",
         "xml",
     )
 
@@ -47,7 +50,7 @@ class PubMedArticle(object):
                 self.__setattr__(field, kwargs.get(field, None))
 
     def _extractPubMedId(self: object, xml_element: TypeVar("Element")) -> str:
-        path = ".//ArticleId[@IdType='pubmed']"
+        path = ".//MedlineCitation/PMID"
         return getContent(element=xml_element, path=path)
 
     def _extractTitle(self: object, xml_element: TypeVar("Element")) -> str:
@@ -59,9 +62,24 @@ class PubMedArticle(object):
         return [
             keyword.text for keyword in xml_element.findall(path) if keyword is not None
         ]
+    
+    # # Should we do somthing with the MeSH data ?
+    # def _extractMeSH(self: object, xml_element: TypeVar("Element")) -> list:
+    #     return [
+    #         {
+    #             #"MeSH_unique_id": getContent(MeSH, ".//LastName", None), the UI attribute
+    #             #"major_topic": getContent(MeSH, ".//ForeName", None), # the MajorTopicYN attribute
+    #             "name": getContent(MeSH, ".//DescriptorName", None)
+    #         }
+    #         for MeSH in xml_element.findall(".//MeshHeading")
+    #     ]
 
     def _extractJournal(self: object, xml_element: TypeVar("Element")) -> str:
         path = ".//Journal/Title"
+        return getContent(element=xml_element, path=path)
+    
+    def _extractAbbreviatedJournal(self: object, xml_element: TypeVar("Element")) -> str:
+        path = ".//Journal/ISOAbbreviation"
         return getContent(element=xml_element, path=path)
 
     def _extractAbstract(self: object, xml_element: TypeVar("Element")) -> str:
@@ -85,7 +103,31 @@ class PubMedArticle(object):
         return getContent(element=xml_element, path=path)
 
     def _extractDoi(self: object, xml_element: TypeVar("Element")) -> str:
-        path = ".//ArticleId[@IdType='doi']"
+        path = ".//PubmedData/ArticleIdList/ArticleId[@IdType='doi']"
+        return getContent(element=xml_element, path=path)
+    
+    def _extractPages(self: object, xml_element: TypeVar("Element")) -> str:
+        path = ".//Pagination/MedlinePgn"
+        return getContent(element=xml_element, path=path)
+    
+    def _extractYear(self: object, xml_element: TypeVar("Element")) -> str: 
+        path = ".//JournalIssue/PubDate/Year"
+        return getContent(element=xml_element, path=path)
+     
+    def _extractMonth(self: object, xml_element: TypeVar("Element")) -> str:
+        path = ".//JournalIssue/PubDate/Month"
+        return getContent(element=xml_element, path=path)
+     
+    def _extractVolume(self: object, xml_element: TypeVar("Element")) -> str:
+        path = ".//JournalIssue/Volume"
+        return getContent(element=xml_element, path=path)   
+    
+    def _extractIssue(self: object, xml_element: TypeVar("Element")) -> str:
+        path = ".//JournalIssue/Issue"
+        return getContent(element=xml_element, path=path)  
+    
+    def _extractCommentIDs(self: object, xml_element: TypeVar("Element")) -> str:
+        path = ".//CommentsCorrectionsList/CommentsCorrections[@RefType='CommentIn']/PMID"
         return getContent(element=xml_element, path=path)
 
     def _extractPublicationDate(
@@ -109,7 +151,8 @@ class PubMedArticle(object):
         except Exception as e:
             print(e)
             return None
-
+        
+         
     def _extractAuthors(self: object, xml_element: TypeVar("Element")) -> list:
         return [
             {
@@ -120,6 +163,77 @@ class PubMedArticle(object):
             }
             for author in xml_element.findall(".//Author")
         ]
+    
+    def _extractSSIAffiliation(self: object, xml_element: TypeVar("Element")) -> list:
+        #breakers = "(Statens Serum Institut|Laboratory|Department|Research Unit|Unit)"
+        affiliation_list = []
+        for author in xml_element.findall(".//Author"):
+            if re.search(r"Statens Serum Institut", getContent(author, ".//AffiliationInfo/Affiliation", None)):
+                affiliation_values = getContent(author, ".//AffiliationInfo/Affiliation", None).split("\n")
+                for value in affiliation_values:
+                    if re.search(r"Statens Serum Institut", value):
+                        new_dict = {
+                            "lastname": getContent(author, ".//LastName", None),
+                            "firstname": getContent(author, ".//ForeName", None),
+                            "initials": getContent(author, ".//Initials", None),
+                            "affiliation": value,
+                            "department": 1, # re.search("Department of .+(?=, " + breakers + ")", value).group()
+                            "unit": 1,
+                            "laboratory": 1,
+                        }
+                        affiliation_list.append(new_dict)
+        return affiliation_list 
+   
+    def _createBibTex(self: object, xml_element: TypeVar("Element")) -> str:
+        # starte bibtext creation
+        bibtext_str = "@article{" + self._extractPubMedId(xml_element)
+        
+        #author (obligatory)
+        authors = ""
+        for i, au in enumerate(self._extractAuthors(xml_element)):
+            if i == 0:
+                authors += au["lastname"] + ", " + au["firstname"]
+            else :
+                authors += " AND " + au["lastname"] + ", " + au["firstname"]
+        bibtext_str += ", author = {" +  authors + "}" 
+        
+        # title (obligatory)
+        bibtext_str += ", title = {" + self._extractTitle(xml_element) + "}"
+        
+        # journal (obligatory)
+        bibtext_str += ", journal = {" + self._extractJournal(xml_element)  + "}"
+            
+        # year (obligatory)
+        bibtext_str += ", year = {" + self._extractYear(xml_element)  + "}"
+        
+        # volume (obligatory)
+        bibtext_str += ", volume = {" + self._extractVolume(xml_element)  + "}"
+        
+        # (issue) number
+        issue = self._extractIssue(xml_element)
+        if issue:    
+            bibtext_str += ", number = {" + issue  + "}"
+
+        # pages
+        pages = self._extractPages(xml_element)
+        if pages:    
+            bibtext_str += ", pages = {" + pages  + "}"
+        
+        # month
+        month = self._extractMonth(xml_element)
+        if month:    
+            bibtext_str += ", month = {" + month  + "}"
+
+        # doi
+        doi = self._extractDoi(xml_element)
+        if doi:    
+            bibtext_str += ", doi = {" + doi  + "}"
+
+        # finalize
+        bibtext_str += "}"
+        
+        return bibtext_str
+     
 
     def _initializeFromXML(self: object, xml_element: TypeVar("Element")) -> None:
         """ Helper method that parses an XML element into an article object.
@@ -138,6 +252,8 @@ class PubMedArticle(object):
         self.doi = self._extractDoi(xml_element)
         self.publication_date = self._extractPublicationDate(xml_element)
         self.authors = self._extractAuthors(xml_element)
+        self.ssi_affiliation = self._extractSSIAffiliation(xml_element)
+        self.bibtex = self._createBibTex(xml_element)
         self.xml = xml_element
 
     def toDict(self: object) -> dict:
