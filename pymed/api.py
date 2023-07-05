@@ -15,7 +15,7 @@ from .book import PubMedBookArticle
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov"
 
 
-class PubMed(object):
+class PubMedSSI(object):
     """ Wrapper around the PubMed API.
     """
 
@@ -46,6 +46,8 @@ class PubMed(object):
         # Define the standard / default query parameters
         self.parameters = {"tool": tool, "email": email, "db": "pubmed"}
 
+
+# Should this return a list object with a special class that has methods for creating matricies with affiliation / paper info
     def query(self: object, query: str, max_results: int = 100):
         """ Method that executes a query agains the GraphQL schema, automatically
             inserting the PubMed data loader.
@@ -59,7 +61,8 @@ class PubMed(object):
         """
 
         # Retrieve the article IDs for the query
-        article_ids = self._getArticleIds(query=query, max_results=max_results)
+        ssi_query = "(" + query + ") AND ((Statens Serum Institut[Affiliation]) OR (SSI[Affiliation])))"
+        article_ids = self._getArticleIds(query=ssi_query, max_results=max_results)
 
         # Get the articles themselves
         articles = list(
@@ -178,6 +181,11 @@ class PubMed(object):
             yield PubMedArticle(xml_element=article)
         for book in root.iter("PubmedBookArticle"):
             yield PubMedBookArticle(xml_element=book)
+      
+    # Find the number of papers the cite this paper
+    # def _getArticleCitedIn(self: object, query: str, max_results: int) -> list:
+    # https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi?dbfrom=pubmed&linkname=pubmed_pubmed_citedin&id=35442390
+    
 
     def _getArticleIds(self: object, query: str, max_results: int) -> list:
         """ Helper method to retrieve the article IDs for a query.
